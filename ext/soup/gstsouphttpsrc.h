@@ -62,6 +62,7 @@ struct _GstSoupHTTPSrc {
   GMainContext *context;       /* I/O context. */
   GMainLoop *loop;             /* Event loop. */
   SoupSession *session;        /* Async context. */
+  SoupCookieJar *cookie_jar;   /* Volatile HTTP cookie storage */
   GstSoupHTTPSrcSessionIOStatus session_io_status;
                                /* Async I/O status. */
   SoupMessage *msg;            /* Request message. */
