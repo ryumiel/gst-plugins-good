@@ -155,10 +155,18 @@ struct _GstQTDemux {
   guint8 *cenc_aux_info_sizes;
   guint32 cenc_aux_sample_count;
 
+  gboolean always_honor_tfdt;
 };
 
 struct _GstQTDemuxClass {
   GstElementClass parent_class;
+};
+
+/* props */
+enum
+{
+  PROP_0,
+  PROP_ALWAYS_HONOR_TFDT
 };
 
 GType gst_qtdemux_get_type (void);

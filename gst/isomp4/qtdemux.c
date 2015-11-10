@@ -538,6 +538,11 @@ static void gst_qtdemux_append_protection_system_id (GstQTDemux * qtdemux,
     const gchar * id);
 static void qtdemux_gst_structure_free (GstStructure * gststructure);
 
+static void gst_qtdemux_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * spec);
+static void gst_qtdemux_get_property (GObject * object, guint prop_id,
+    GValue * value, GParamSpec * spec);
+
 static void
 gst_qtdemux_class_init (GstQTDemuxClass * klass)
 {
@@ -549,7 +554,20 @@ gst_qtdemux_class_init (GstQTDemuxClass * klass)
 
   parent_class = g_type_class_peek_parent (klass);
 
+  gobject_class->set_property = gst_qtdemux_set_property;
+  gobject_class->get_property = gst_qtdemux_get_property;
+
   gobject_class->dispose = gst_qtdemux_dispose;
+
+ /**
+   * GstQtDemux::always-honor-tfdt:
+   *
+   * Requests the demuxer to respect what the TFDT atom says in order to produce presentation timestamps. Defaults to FALSE.
+   */
+  g_object_class_install_property (gobject_class, PROP_ALWAYS_HONOR_TFDT,
+      g_param_spec_boolean ("always-honor-tfdt", "Always honor TFDT",
+          "When enabled, TFDT atom will always be respected in order to produce presentation timestamps",
+          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gstelement_class->change_state = GST_DEBUG_FUNCPTR (gst_qtdemux_change_state);
 #if 0
@@ -615,6 +633,7 @@ gst_qtdemux_init (GstQTDemux * qtdemux)
   qtdemux->cenc_aux_info_sizes = NULL;
   qtdemux->cenc_aux_sample_count = 0;
   qtdemux->protection_system_ids = NULL;
+  qtdemux->always_honor_tfdt = FALSE;
   g_queue_init (&qtdemux->protection_event_queue);
   gst_segment_init (&qtdemux->segment, GST_FORMAT_TIME);
   qtdemux->flowcombiner = gst_flow_combiner_new ();
@@ -640,6 +659,42 @@ gst_qtdemux_dispose (GObject * object)
   qtdemux->cenc_aux_info_sizes = NULL;
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
+}
+
+static void
+gst_qtdemux_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * pspec)
+{
+  GstQTDemux *qtdemux = GST_QTDEMUX (object);
+
+  switch (prop_id) {
+    case PROP_ALWAYS_HONOR_TFDT:
+      GST_OBJECT_LOCK (qtdemux);
+      qtdemux->always_honor_tfdt = g_value_get_boolean (value);
+      GST_OBJECT_UNLOCK (qtdemux);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
+  }
+}
+
+static void
+gst_qtdemux_get_property (GObject * object, guint prop_id, GValue * value,
+    GParamSpec * pspec)
+{
+  GstQTDemux *qtdemux = GST_QTDEMUX (object);
+
+  switch (prop_id) {
+    case PROP_ALWAYS_HONOR_TFDT:
+      GST_OBJECT_LOCK (qtdemux);
+      g_value_set_boolean (value, qtdemux->always_honor_tfdt);
+      GST_OBJECT_UNLOCK (qtdemux);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
+  }
 }
 
 static void
@@ -3051,6 +3106,16 @@ qtdemux_parse_trun (GstQTDemux * qtdemux, GstByteReader * trun,
       timestamp =
           stream->samples[stream->n_samples - 1].timestamp +
           stream->samples[stream->n_samples - 1].duration;
+
+      /* If we're always honoring TFDT and there's a significative difference
+       * between the decode_ts and the timestamp, prefer decode_ts */
+      if (qtdemux->always_honor_tfdt == TRUE
+          && abs (decode_ts - timestamp) >
+          stream->samples[stream->n_samples - 1].duration) {
+        GST_INFO_OBJECT (qtdemux,
+            "decode_ts is significantly different from timestamp, using decode_ts");
+        timestamp = decode_ts;
+      }
 
       gst_ts = QTSTREAMTIME_TO_GSTTIME (stream, timestamp);
       GST_INFO_OBJECT (qtdemux, "first sample ts %" GST_TIME_FORMAT
